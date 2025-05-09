@@ -1,10 +1,10 @@
 /*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+Copyright © 2025 Mason Clemons clemiondev@gmail.com
 */
 package main
 
 import (
-	"secutils/cmd"
+	"github.com/clemiondev/secutils/cmd"
 )
 
 func main() {

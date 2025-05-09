@@ -1,4 +1,4 @@
-module secutils
+module github.com/clemiondev/secutils
 
 go 1.24.3
 
