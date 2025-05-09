@@ -1,6 +1,9 @@
 ## Sec-Utils
 A go-based CLI application providing fundamental utilities to the cybersecurity community using GNU/Unix design principles.
 
+## Warning!
+This is not a complete application yet as it is in early development. Please do not use this repo for anything production or critical
+
 ## Contact 
 clemiondev@gmail.com
 
