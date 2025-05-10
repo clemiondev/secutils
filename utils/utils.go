@@ -4,6 +4,8 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,62 +13,43 @@ import (
 	"time"
 )
 
-// Types
-// FileInfo holds information about a file or directory
-type FileInfo struct {
-	Name         string
-	Size         int64
-	Mode         os.FileMode
-	ModTime      time.Time
-	IsDir        bool
-	Permissions  string
-	Owner        string
-	Group        string
-	LinkTarget   string
-	AbsolutePath string
-}
-type FileType string
+type (
+	// Types
+	FileExtension            string
+	FileExtensionDescription string
 
-// GetFileHashes returns the MD5, SHA1, and SHA256 hashes of a file
-func GetFileHashes(path string) (string, string, string, error) {
-	// Open the file
-	file, err := os.Open(path)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer file.Close()
-
-	// Create hashers for MD5, SHA1, and SHA256
-	md5Hasher := md5.New()
-	sha1Hasher := sha1.New()
-	sha256Hasher := sha256.New()
-
-	// Copy the file contents to the hashers
-	if _, err := io.Copy(md5Hasher, file); err != nil {
-		return "", "", "", err
-	}
-	file.Seek(0, 0) // Reset the file pointer to the beginning
-	if _, err := io.Copy(sha1Hasher, file); err != nil {
-		return "", "", "", err
-	}
-	file.Seek(0, 0) // Reset the file pointer to the beginning
-	if _, err := io.Copy(sha256Hasher, file); err != nil {
-		return "", "", "", err
+	FileType struct {
+		Extension   FileExtension
+		Description FileExtensionDescription
 	}
 
-	// Get the hashes as hex strings
-	md5Hash := fmt.Sprintf("%x", md5Hasher.Sum(nil))
-	sha1Hash := fmt.Sprintf("%x", sha1Hasher.Sum(nil))
-	sha256Hash := fmt.Sprintf("%x", sha256Hasher.Sum(nil))
+	FileInfo struct {
+		Name         string
+		Size         int64
+		Mode         os.FileMode
+		ModTime      time.Time
+		IsDir        bool
+		Permissions  string
+		Owner        string
+		Group        string
+		LinkTarget   string
+		AbsolutePath string
+		FileType     FileType
+		MD5Hash      string
+		SHA1Hash     string
+		SHA256Hash   string
+	}
+)
 
-	return md5Hash, sha1Hash, sha256Hash, nil
-}
+// constants
+const (
+	// FileTypeUnknown represents an unknown file type
+	FileTypeUnknown            = "unknown"
+	FileTypeUnknownDescription = ""
+)
 
-// GetFileType determines the file type based on the file extension
-func GetFileType(path string) FileType {
-	ext := filepath.Ext(path)
-	// Define a map of file extensions to file type decriptions
-	fileTypeMap := map[string]FileType{
+var (
+	SupportedFileExtensionsMap = map[string]string{
 		".txt":    "Text File",
 		".jpg":    "Image File",
 		".png":    "Image File",
@@ -140,10 +123,59 @@ func GetFileType(path string) FileType {
 		".jks":    "Java KeyStore File",
 		".jceks":  "Java Cryptography Extension KeyStore File",
 	}
-	if fileType, exists := fileTypeMap[ext]; exists {
+	ErrUnsupportedFileType = errors.New("unsupported file type")
+)
+
+// GetFileHashes returns the MD5, SHA1, and SHA256 hashes of a file
+func GetFileHashes(path string) (string, string, string, error) {
+	// Open the file
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer file.Close()
+
+	// Create hashers for MD5, SHA1, and SHA256
+	md5Hasher := md5.New()
+	sha1Hasher := sha1.New()
+	sha256Hasher := sha256.New()
+
+	// Copy the file contents to the hashers
+	if _, err := io.Copy(md5Hasher, file); err != nil {
+		return "", "", "", err
+	}
+	file.Seek(0, 0) // Reset the file pointer to the beginning
+	if _, err := io.Copy(sha1Hasher, file); err != nil {
+		return "", "", "", err
+	}
+	file.Seek(0, 0) // Reset the file pointer to the beginning
+	if _, err := io.Copy(sha256Hasher, file); err != nil {
+		return "", "", "", err
+	}
+
+	// Get the hashes as hex strings
+	md5Hash := fmt.Sprintf("%x", md5Hasher.Sum(nil))
+	sha1Hash := fmt.Sprintf("%x", sha1Hasher.Sum(nil))
+	sha256Hash := fmt.Sprintf("%x", sha256Hasher.Sum(nil))
+
+	return md5Hash, sha1Hash, sha256Hash, nil
+}
+
+// GetFileType determines the file type based on the file extension
+func GetFileType(path string) FileType {
+	ext := filepath.Ext(path)
+
+	if fileType, exists := SupportedFileExtensionsMap[ext]; exists {
+		fileType := FileType{
+			Extension:   FileExtension(ext),
+			Description: FileExtensionDescription(fileType),
+		}
 		return fileType
 	}
-	return "Unknown File Type"
+	return FileType{
+		Extension:   FileExtension(FileTypeUnknown),
+		Description: FileExtensionDescription(FileTypeUnknownDescription),
+	}
 }
 
 // GetFileInfo returns information about a file or directory
@@ -181,4 +213,76 @@ func GetFileInfo(path string) (FileInfo, error) {
 		LinkTarget:   linkTarget,
 		AbsolutePath: absPath,
 	}, nil
+}
+
+// GetOwnerAndGroup returns the owner and group of a file
+func GetOwnerAndGroup(path string) (string, string, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return "", "", err
+	}
+	// Get the file's UID and GID
+	uid := fileInfo.Sys().(*os.FileStat).Uid
+	gid := fileInfo.Sys().(*os.FileStat).Gid
+	// Get the user and group names
+	owner, err := os.UserLookupId(fmt.Sprint(uid))
+	if err != nil {
+		return "", "", err
+	}
+	group, err := os.GroupLookupId(fmt.Sprint(gid))
+	if err != nil {
+		return "", "", err
+	}
+	return owner.Username, group.Name, nil
+}
+
+// GetFilePermissions returns the file permissions of a file
+func GetFilePermissions(path string) (os.FileMode, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return fileInfo.Mode(), nil
+}
+
+// GetFileSize returns the size of a file
+func GetFileSize(path string) (int64, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return fileInfo.Size(), nil
+}
+
+// GetFileModificationTime returns the last modification time of a file
+func GetFileModificationTime(path string) (time.Time, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return fileInfo.ModTime(), nil
+}
+
+// GetFileName returns the name of a file
+func GetFileName(path string) (string, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	return fileInfo.Name(), nil
+}
+
+func SaveFileInfoToJSON(fileInfo FileInfo, outputPath string) error {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(fileInfo)
+	if err != nil {
+		return err
+	}
+	return nil
 }
