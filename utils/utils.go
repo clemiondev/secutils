@@ -32,7 +32,6 @@ type (
 		Permissions  string
 		Owner        string
 		Group        string
-		LinkTarget   string
 		AbsolutePath string
 		FileType     FileType
 		MD5Hash      string
@@ -45,7 +44,7 @@ type (
 const (
 	// FileTypeUnknown represents an unknown file type
 	FileTypeUnknown            = "unknown"
-	FileTypeUnknownDescription = ""
+	FileTypeUnknownDescription = "unknown file type"
 )
 
 var (
@@ -123,7 +122,26 @@ var (
 		".jks":    "Java KeyStore File",
 		".jceks":  "Java Cryptography Extension KeyStore File",
 	}
-	ErrUnsupportedFileType = errors.New("unsupported file type")
+	ErrUnsupportedFileType  = errors.New("unsupported file type")
+	ErrPathNotFound         = errors.New("path not found")
+	ErrPathNotFile          = errors.New("path is not a file")
+	ErrPathNotDir           = errors.New("path is not a directory")
+	ErrPathNotSymlink      = errors.New("path is not a symlink")
+	ErrPathNotReadable      = errors.New("path is not readable")
+	ErrPathNotWritable      = errors.New("path is not writable")
+	ErrPathNotExecutable    = errors.New("path is not executable")
+	ErrPathNotDeletable     = errors.New("path is not deletable")
+	ErrPathNotRenamable     = errors.New("path is not renamable")
+	ErrPathNotSymlinkTarget = errors.New("path is not a symlink target"
+	ErrPathNotSymlinkBroken = errors.New("path is a broken symlink")
+	ErrPathNotSymlinkLoop   = errors.New("path is a symlink loop")
+	ErrPathNotSymlinkTargetNotFound = errors.New("path is a symlink target not found")
+	ErrPathNotSymlinkTargetNotReadable = errors.New("path is a symlink target not readable")
+	ErrPathNotSymlinkTargetNotWritable = errors.New("path is a symlink target not writable")
+	ErrPathNotSymlinkTargetNotExecutable = errors.New("path is a symlink target not executable")
+	ErrPathNotSymlinkTargetNotDeletable = errors.New("path is a symlink target not deletable")
+	ErrPathNotSymlinkTargetNotRenamable = errors.New("path is a symlink target not renamable")
+	ErrPathNotSymlinkTargetNotSymlink = errors.New("path is a symlink target not a symlink")
 )
 
 // GetFileHashes returns the MD5, SHA1, and SHA256 hashes of a file
@@ -178,8 +196,8 @@ func GetFileType(path string) FileType {
 	}
 }
 
-// GetFileInfo returns information about a file or directory
-func GetFileInfo(path string) (FileInfo, error) {
+// GetInfo returns information about a file or directory
+func GetInfo(path string) (FileInfo, error) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return FileInfo{}, err
@@ -188,12 +206,9 @@ func GetFileInfo(path string) (FileInfo, error) {
 	if err != nil {
 		return FileInfo{}, err
 	}
-	owner, group, err := GetOwnerAndGroup(path)
-	if err != nil {
-		return FileInfo{}, err
-	}
 	permissions := fileInfo.Mode().Perm()
 	fileType := GetFileType(path)
+	md5Hash, sha1Hash, sha256Hash, err := GetFileHashes(path)
 	linkTarget := ""
 	if fileInfo.Mode()&os.ModeSymlink != 0 {
 		linkTarget, err = os.Readlink(path)
@@ -208,71 +223,18 @@ func GetFileInfo(path string) (FileInfo, error) {
 		ModTime:      fileInfo.ModTime(),
 		IsDir:        fileInfo.IsDir(),
 		Permissions:  permissions.String(),
-		Owner:        owner,
-		Group:        group,
 		LinkTarget:   linkTarget,
 		AbsolutePath: absPath,
+		Owner:		  fileInfo.Owner(),
+		Group:		  fileInfo.Group(),
+		FileType:     fileType,
+		MD5Hash:      md5Hash,
+		SHA1Hash:     sha1Hash,
+		SHA256Hash:   sha256Hash,
 	}, nil
 }
 
-// GetOwnerAndGroup returns the owner and group of a file
-func GetOwnerAndGroup(path string) (string, string, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return "", "", err
-	}
-	// Get the file's UID and GID
-	uid := fileInfo.Sys().(*os.FileStat).Uid
-	gid := fileInfo.Sys().(*os.FileStat).Gid
-	// Get the user and group names
-	owner, err := os.UserLookupId(fmt.Sprint(uid))
-	if err != nil {
-		return "", "", err
-	}
-	group, err := os.GroupLookupId(fmt.Sprint(gid))
-	if err != nil {
-		return "", "", err
-	}
-	return owner.Username, group.Name, nil
-}
-
-// GetFilePermissions returns the file permissions of a file
-func GetFilePermissions(path string) (os.FileMode, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	return fileInfo.Mode(), nil
-}
-
-// GetFileSize returns the size of a file
-func GetFileSize(path string) (int64, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	return fileInfo.Size(), nil
-}
-
-// GetFileModificationTime returns the last modification time of a file
-func GetFileModificationTime(path string) (time.Time, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return fileInfo.ModTime(), nil
-}
-
-// GetFileName returns the name of a file
-func GetFileName(path string) (string, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	return fileInfo.Name(), nil
-}
-
-func SaveFileInfoToJSON(fileInfo FileInfo, outputPath string) error {
+func SaveInfoToJSON(fileInfo FileInfo, outputPath string) error {
 	file, err := os.Create(outputPath)
 	if err != nil {
 		return err
